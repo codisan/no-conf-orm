@@ -1,6 +1,6 @@
 # 无配置ORM框架
 
-
+![alt text](https://github.com/codisan/no-conf-orm/blob/master/doc/imgs/index.jpg "lol...")
 
 ## 定义model
 ``` java
