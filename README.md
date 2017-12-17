@@ -1,5 +1,7 @@
 # 无配置ORM框架
 
+
+
 ## 定义model
 ``` java
 @Table(name="user")
