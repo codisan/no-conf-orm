@@ -12,17 +12,23 @@ public class Reflect {
 		
 		try {
 			// find one
-			// User u = Dao.findOne(User.class, "where user_id > 1");
-			// System.out.println(u);
+			 User u = Dao.findOne(User.class, "where user_id = 1");
+			 System.out.println(u);
+			 
+			 u.firstName = "--------------";
+			 
+			 // u.update(User.class, u);
+			 
+			 u.destroy(User.class, u);
 			
 			// insert
-			User u = new User();
-			u.firstName = "xx";
-			u.lastName = "oo";
-			u.emailId = "xx@oo.com";
-			u.password = "xx pass word";
-			
-			int row = Dao.insert(User.class, u);
+//			User u = new User();
+//			u.firstName = "xx";
+//			u.lastName = "oo";
+//			u.emailId = "xx@oo.com";
+//			u.password = "xx pass word";
+//			
+//			int row = Dao.insert(User.class, u);
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

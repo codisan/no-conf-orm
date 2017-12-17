@@ -73,16 +73,16 @@ public class Dao {
 		Model md = getModel(clz); 	// 将model 的信息取出来
 		
 		List<ModelField> modelFields = md.fields;
-		String columnsql = modelFields.stream().map(n -> {
-			return String.format("`%s` as `%s`", n.columnname, n.name);
-		}).collect(Collectors.joining(" , "));	
+		List<String> columns = new ArrayList<String>();
+		// 添加主键
+		columns.add(String.format("`%s` as `%s`", md.primaryFieldColumnName, md.primaryFieldName));
+		// 添加其他字段
+		modelFields.forEach(mf -> columns.add(String.format("`%s` as `%s`", mf.columnname, mf.name)));		
+		String columnSql = columns.stream().collect(Collectors.joining(" , "));
 				
 		// 拼接 sql 语句
-		String sql = "select :columns from `:tablename` :filter limit 1";
-		
-		sql = sql.replaceAll(":columns", columnsql);
-		sql = sql.replaceAll(":tablename", md.tablename);
-		sql = sql.replaceAll(":filter", filter);
+		String sql = "select %s from `%s` %s limit 1";
+		sql = String.format(sql, columnSql, md.tablename, filter);
 		
 		System.out.println(sql);
 		
@@ -91,9 +91,12 @@ public class Dao {
 		
 		Object ret = clz.newInstance();	// 返回的实例
 		while (result.next()) {
+			// 设置主键
+			setFieldValue(md.primaryField, md.primaryFieldName, result, ret);
+			
 			for(int i = 0; i < modelFields.size(); i++) {
 				ModelField f = modelFields.get(i);
-				setFieldValue(f, result, ret);
+				setFieldValue(f.field, f.name, result, ret);
 			}
 		}
 		return (T)ret;
@@ -108,60 +111,97 @@ public class Dao {
 		List<String> values = new ArrayList<String>();
 		
 		md.fields.forEach(f -> {
-			if(!f.autoIncrement){ 
-				values.add("?");
-				columns.add(String.format("`%s`", f.columnname));
-			}
+			values.add("?");
+			columns.add(String.format("`%s`", f.columnname));
 		});
 		
 		String vals = values.stream().collect(Collectors.joining(" , "));
 		String cls = columns.stream().collect(Collectors.joining(" , ")); 
 		sql = String.format(sql, md.tablename, cls, vals);
 		
-		System.out.println("sql: " + sql);
-		
 		PreparedStatement st = con.prepareStatement(sql);
 		
-		for(int i = 0, j = 1; i < fields.size(); i++) {
+		for(int i = 0; i < fields.size(); i++) {
 			ModelField f = fields.get(i);
-			if(!f.autoIncrement) {
-				setStatement(j, f, st, entity);
-				j++;	
-			}
+			setStatement(i + 1, f.field, f.name, st, entity);
 		}
 		
 		return st.executeUpdate();
 	}
 	
-	public static void update(Class clz, Object o, String filter) {
+	public static int update(Class clz, Object entity, String... filter) throws IllegalArgumentException, IllegalAccessException, SQLException {
+		String sql = "UPDATE `%s` SET %s WHERE %s";
+		Model md = getModel(clz); 	// 将model 的信息取出来
+		String tablename = md.tablename;
 		
-	}
-	
-	private static void destroy(Class clz, Object o) {
+		String where = String.format("`%s` = %d", md.primaryFieldColumnName, md.primaryField.get(entity));
+		// 默认有一个主键的条件，也可以接收多个参数， 用and  连接起来
+		if(filter.length > 1) {
+			where = String.format("%s and %s", where, filter);
+		}
 		
+		List<ModelField> fields = md.fields;
+		List<String> columns = new ArrayList<String>();
+		
+		for(int i = 0; i < fields.size(); i++) {
+			ModelField mf = fields.get(i);
+			columns.add(String.format("`%s` = ?", mf.columnname));
+		}
+		
+		String cls = columns.stream().collect(Collectors.joining(" , "));
+		
+		sql = String.format(sql, tablename, cls, where);
+		
+		PreparedStatement st = con.prepareStatement(sql);
+		for(int i = 0; i < fields.size(); i++) {
+			ModelField f = fields.get(i);
+			setStatement(i + 1, f.field, f.name, st, entity);
+		}
+		
+		return st.executeUpdate();
 	}
 	
-	private static void setStatement(int j, ModelField f, PreparedStatement st, Object entity) throws IllegalArgumentException, IllegalAccessException, SQLException {
-		if(f.field.getType() == Integer.class) {
-			st.setInt(j, (int) f.field.get(entity));
+	public static int destroy(Class clz, Object entity, String... filter) throws IllegalArgumentException, IllegalAccessException, SQLException {
+		String sql = "DELETE FROM `%s` WHERE %s";
+		Model md = getModel(clz); 	// 将model 的信息取出来
+		String tablename = md.tablename;
+		
+		String where = String.format("`%s` = %d", md.primaryFieldColumnName, md.primaryField.get(entity));
+		// 默认有一个主键的条件，也可以接收多个参数， 用and  连接起来
+		if(filter.length > 1) {
+			where = String.format("%s and %s", where, filter);
 		}
-		if(f.field.getType() == String.class) {
-			st.setString(j, (String) f.field.get(entity));
+		
+		sql = String.format(sql, md.tablename, where);
+		
+		System.out.println("destroy sql: " + sql);
+		PreparedStatement st = con.prepareStatement(sql);
+		
+		// setStatement(1, md.primaryField, md.primaryFieldName, st, entity);
+		return st.executeUpdate();
+	}
+	
+	private static void setStatement(int j, Field f, String fname, PreparedStatement st, Object entity) throws IllegalArgumentException, IllegalAccessException, SQLException {
+		if(f.getType() == Integer.class) {
+			st.setInt(j, (int) f.get(entity));
 		}
-		if(f.field.getType() == Date.class) {
-			st.setDate(j, (java.sql.Date) f.field.get(entity));
+		if(f.getType() == String.class) {
+			st.setString(j, (String) f.get(entity));
+		}
+		if(f.getType() == Date.class) {
+			st.setDate(j, (java.sql.Date) f.get(entity));
 		}
 	}
 	
-	private static void setFieldValue(ModelField f, ResultSet rs, Object ret) throws IllegalArgumentException, IllegalAccessException, SQLException {
-		if(f.field.getType() == Integer.class) {
-			f.field.set(ret, rs.getInt(f.name));
+	private static void setFieldValue(Field f, String fname, ResultSet rs, Object ret) throws IllegalArgumentException, IllegalAccessException, SQLException {
+		if(f.getType() == Integer.class) {
+			f.set(ret, rs.getInt(fname));
 		}
-		if(f.field.getType() == String.class) {
-			f.field.set(ret, rs.getString(f.name));
+		if(f.getType() == String.class) {
+			f.set(ret, rs.getString(fname));
 		}
-		if(f.field.getType() == Date.class) {
-			f.field.set(ret, rs.getDate(f.name));
+		if(f.getType() == Date.class) {
+			f.set(ret, rs.getDate(fname));
 		}
 	}
 	
@@ -176,27 +216,36 @@ public class Dao {
 		List<ModelField> modelFields = new ArrayList();
 		
 		Field[] fs = clz.getFields();
+		Field primaryField = null;
+		String primaryFieldName = null;
+		String primaryFieldColumnName = null;		
 
 		for(Field f : fs){
 			Annotation[] as = f.getDeclaredAnnotations();
 			String fieldname = f.getName();
 			String columnname = fieldname;	// 默认等于 field name
-			boolean isPrimaryKey = false;
-			boolean autoIncrement = false;
+			boolean isPrimary = false;
 			
 			for(Annotation a : as){
 				if(a instanceof Column){
 					Column currAnno = (Column) a;
 					columnname = currAnno.name();
-					isPrimaryKey = currAnno.primaryKey();
-					autoIncrement = currAnno.autoIncrement();
+					
+					if(currAnno.primaryKey()) {
+						isPrimary = true;
+						primaryField = f;
+						primaryFieldName = f.getName();
+						primaryFieldColumnName = columnname;
+					}
 				}
 			}
-			
-			modelFields.add(new ModelField(fieldname, columnname, f, isPrimaryKey, autoIncrement));
+			// 不添加主键
+			if(!isPrimary) {
+				modelFields.add(new ModelField(fieldname, columnname, f));
+			}
 		}
 		
-		Model m = new Model(tablename, modelFields);
+		Model m = new Model(tablename, modelFields, primaryField, primaryFieldName, primaryFieldColumnName);
 		cachedModels.put(modelname, m);	 // 将model 信息缓存起来
 		return m;
 	}
